@@ -1,5 +1,11 @@
 locals {
-  ec2-name = "${var.project_name}-${var.environment}"
-  public_subnet_id = split ("," , data.aws_ssm_parameter.public_subnet_ids.value)[0]
-}
+  ec2_name           = "${var.project_name}-${var.environment}"
+  common_tags = {
+        Project = var.project_name
+        Environment = var.environment
+        Terraform = "true"
+    }
 
+      public_subnet_id = element(split(",", data.aws_ssm_parameter.public_subnet_ids.value), 0)
+
+}

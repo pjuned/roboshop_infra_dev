@@ -87,6 +87,8 @@ module "payment" {
     sg_name = "payment"
   }
 
+  
+
   module "web" {
     source = "../../terraform_aws_sg"
     project_name = var.project_name
@@ -96,14 +98,53 @@ module "payment" {
     sg_name = "web"
   }
 
-  module "vpn" {
-    source = "../../terraform_aws_sg"
-    project_name = var.project_name
-    environment = var.environment
-    sg_description = "SG for vpn"
-    vpc_id = data.aws_vpc.default.id
-    sg_name = "vpn"
+  # creating new vpn_sg_id for openvpn instance as I am putting it into same VPC i.e roboshop VPC
+resource "aws_security_group" "vpn" {
+  name        = "roboshop-dev-vpn"
+  description = "VPN SG"
+  vpc_id      = data.aws_ssm_parameter.vpc_id.value
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["43.249.227.74/32"] #My internet public IP 
   }
+
+
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 943
+    to_port     = 943
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 1194
+    to_port     = 1194
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "roboshop-dev-vpn"
+  }
+}
 
   module "app_alb" {
     source = "../../terraform_aws_sg"
@@ -124,11 +165,10 @@ module "web_alb" {
   }
 
 
-  app_alb accepting connections from all components:
-  --------------------------------------------------
+  #app_alb accepting connections from all components
 
 resource "aws_security_group_rule" "app_alb-vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type              = "ingress"
   from_port         = 80
   to_port           = 80
@@ -145,17 +185,8 @@ resource "aws_security_group_rule" "app_alb-web" {
   security_group_id = module.app_alb.sg_id
 }
 
-resource "aws_security_group_rule" "app_alb-cart" {
-  source_security_group_id = module.app_alb.sg_id
-  type              = "ingress"
-  from_port         = 80
-  to_port           = 80
-  protocol          = "tcp"
-  security_group_id = module.cart.sg_id
-}
 
-
-resource "aws_security_group_rule" "app_alb-catalogue" {
+resource "aws_security_group_rule" "catalogue-app_alb" {
   source_security_group_id = module.app_alb.sg_id
   type              = "ingress"
   from_port         = 80
@@ -192,7 +223,7 @@ resource "aws_security_group_rule" "app_alb-user" {
 }
 
 
-resource "aws_security_group_rule" "app_alb-payment" {
+resource "aws_security_group_rule" "app_alb-payment-" {
   source_security_group_id = module.app_alb.sg_id
   type              = "ingress"
   from_port         = 80
@@ -201,9 +232,17 @@ resource "aws_security_group_rule" "app_alb-payment" {
   security_group_id = module.payment.sg_id
 }
 
+# resource "aws_security_group_rule" "app_alb-dispatch" {
+#   source_security_group_id = module.app_alb.sg_id
+#   type              = "ingress"
+#   from_port         = 80
+#   to_port           = 80
+#   protocol          = "tcp"
+#   security_group_id = module.dispatch.sg_id
+# }
+
 
 #web_alb accepting connections from internet
----------------------------------------------
 
 resource "aws_security_group_rule" "web_alb-internet" {
   cidr_blocks = ["0.0.0.0/0"]  
@@ -215,24 +254,13 @@ resource "aws_security_group_rule" "web_alb-internet" {
 }
 
 
-#vpn acceptign connections:
----------------------------------
-
-resource "aws_security_group_rule" "vpn-home" {
-  source_security_group_id = module.app_alb.sg_id
-  type              = "ingress"
-  from_port         = 80
-  to_port           = 80
-  protocol          = "tcp"
-  security_group_id = module.payment.sg_id
-}
 
 
 #mongodb accepting connections:
 
 
 resource "aws_security_group_rule" "mongodb_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -263,7 +291,7 @@ resource "aws_security_group_rule" "mongodb_user" {
 
 # redis accepting from vpn
 resource "aws_security_group_rule" "redis_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -293,7 +321,7 @@ resource "aws_security_group_rule" "redis_cart" {
 
 # mysql accepting from vpn
 resource "aws_security_group_rule" "mysql_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -313,7 +341,7 @@ resource "aws_security_group_rule" "mysql_shipping" {
 
 # rabbitmq accepting from vpn
 resource "aws_security_group_rule" "rabbitmq_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -333,7 +361,7 @@ resource "aws_security_group_rule" "rabbitmq_payment" {
 
 # catalogue accepting from vpn
 resource "aws_security_group_rule" "catalogue_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -341,9 +369,9 @@ resource "aws_security_group_rule" "catalogue_vpn" {
   security_group_id        = module.catalogue.sg_id
 }
 
-catalogue accepting from vpn_http
+#catalogue accepting from vpn_http
 resource "aws_security_group_rule" "catalogue_vpn_http" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 8080
   to_port                  = 8080
@@ -380,7 +408,7 @@ resource "aws_security_group_rule" "catalogue_app_alb" {
 
 # user accepting from vpn
 resource "aws_security_group_rule" "user_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -416,7 +444,7 @@ resource "aws_security_group_rule" "user_app_alb" {
 # }
 
 resource "aws_security_group_rule" "cart_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -461,7 +489,7 @@ resource "aws_security_group_rule" "cart_payment" {
 }
 
 resource "aws_security_group_rule" "shipping_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -488,7 +516,7 @@ resource "aws_security_group_rule" "shipping_app_alb" {
 }
 
 resource "aws_security_group_rule" "payment_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -515,7 +543,7 @@ resource "aws_security_group_rule" "payment_app_alb" {
 }
 
 resource "aws_security_group_rule" "web_vpn" {
-  source_security_group_id = module.vpn.sg_id
+  source_security_group_id = aws_security_group.vpn.id
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -526,8 +554,8 @@ resource "aws_security_group_rule" "web_vpn" {
 resource "aws_security_group_rule" "web_internet" {
   cidr_blocks = ["0.0.0.0/0"]
   type                     = "ingress"
-  from_port                = 80
-  to_port                  = 80
+  from_port                = 443
+  to_port                  = 443
   protocol                 = "tcp"
   security_group_id        = module.web.sg_id
 }
